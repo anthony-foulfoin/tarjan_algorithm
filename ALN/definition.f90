@@ -1,0 +1,238 @@
+! $Id: definition.f90,v 1.3 2009-03-25 08:12:25 amestoy Exp $
+       MODULE definition
+       implicit none
+!
+       type mcreuse
+! Schema de stockage au format Compressed Sparse Row (CSR) :
+!   PTROW tableau d'entiers pour gerer les indirections,
+!   VALEUR coefficients reels de la matrice,
+!   INDCOL indices de colonnes des elements non nuls dans la ligne,
+!   nonnul nombre de coefficients non nuls,
+!   ncol dimension de la matrice
+         integer,dimension(:),pointer::PTROW
+         real,dimension(:),pointer::VALEUR
+         integer,dimension(:),pointer::INDCOL
+         integer::nonnul,ncol
+       END type mcreuse
+       type cell_graphe
+! Cellule elementaire pour la construction du graphe : permet le
+! chainage des noeuds adjacents et sert egalement a definir le tableau
+! d'entree du graphe
+         integer::indice
+         type (cell_graphe),pointer::suivant
+       END type cell_graphe
+!
+!       PRIVATE :: merge  ! subroutine privee au module
+!
+!**********************************************
+! description des procedures du MODULE definion
+!**********************************************
+       CONTAINS
+!
+       SUBROUTINE creation_matrice(mat,n,p,trace,retour)
+       implicit none
+! Creation dynamique de la matrice creuse "mat", de dimension "n",
+! possedant "p" elements non nuls.
+! n     : dimension de la matrice
+! p     : nnz dans la matrice
+! trace : vrai si l'impression de la matrice est demande.
+! retour: =0 si aucun probleme dans la lecture et
+!         dans l'allocation dynamique de la memoire.
+!        >0 si pb d'allocation dynamique de la memoire
+!       =-1 si pb de lecture des donnees (on autorise
+!           uniquement l'omission des valeurs reelles).
+!
+! Lecture de la matrice sur l'entree standard
+!
+       type(mcreuse),intent(out):: mat
+       integer,intent(out)   :: n,p
+       logical, intent(in)  :: trace  ! vrai si impression demandee
+       integer, intent(out) :: retour ! >0 si probleme
+! local variables:
+       logical :: reelLUS  ! on peut ne pas lire les reeels
+       integer :: i
+! formats de lecture/ecriture des donnees
+       character (len=9) :: fipt='(12i6)', find='(10i5)'
+       character (len=10) ::fval='(10f7.2)'
+       character (len=80) ::message
+!
+       read (5,'(a80)',END=500) message
+       print '(a80)', message
+       read (5,*,END=500) n,p
+! Allocation dynamique
+       print *, ' ** DEBUT creation_matrice **'
+       allocate(mat%PTROW(n+1), stat=retour)
+       if ( retour > 0 ) return
+       allocate(mat%INDCOL(p), stat=retour)
+       if ( retour > 0 ) return
+       mat%ncol=n
+       mat%nonnul=p
+       nullify(mat%VALEUR)
+! Lecture des donnees sur l'entree standard
+       read (5,'(a80)',END=500) message
+       read(5,fipt,END=500) (mat%PTROW(i), i=1,n+1)
+       read (5,'(a80)',END=500) message
+       read(5,find,END=500) (mat%INDCOL(i),i=1,p)
+       if (trace) then
+!        Impression de la matrice
+         print *,'matrice d ordre : ', n, ' nb de nonzeros : ',p
+         print *,'tableau de pointeurs'
+         print fipt,(mat%PTROW(i),i=1,n+1)
+         print *,'indices de colonnes'
+         print find,(mat%INDCOL(i),i=1,p)
+       end if
+       read (5,'(a80)',END=400) message
+       allocate(mat%VALEUR(P), stat=retour)
+       if ( retour > 0 ) return
+       read(5,fval,END=400) (mat%VALEUR(i), i=1,p)
+       if (trace) then
+!        Impression des valeurs reelles de la matrice
+         print '(a80)', message
+         print fval,(mat%VALEUR(i),i=1,p)
+       end if
+ 400   print *, ' ** FIN creation_matrice **'
+       return
+! ----------------------------------------------
+! Cas d'erreur de lecture de la matrice
+ 500   print *, ' PB dans la lecture de la matrice d''entree '
+       retour = -1
+       return
+       END SUBROUTINE creation_matrice
+!
+!
+!**********************************************************************
+       SUBROUTINE matlab_imprimer(mat,n,m)
+       implicit none
+!  Impression de la matrice sous le format
+!  Indice_ligne Indice_colonne  [Valeur] pour
+!  lecture sous matlab.
+       type (mcreuse), intent(in) :: mat
+       integer, intent(in)        :: n,m
+!
+! local variables:
+!      Formats d'ecriture
+       character (len=8) :: fimatlab='(2i6)'
+       character (len=19) :: frmatlab='(i6,1x,i6,1x,f15.4)'
+       logical  :: reelLUS  ! on n'a pas lu les reels
+       integer :: i,j
+!
+       reelLUS = associated(mat%VALEUR)
+       open(FILE='mat_matlab',UNIT=10,STATUS='UNKNOWN')
+       if (reelLUS) print *,' values available'
+       do i=1,n
+        do j=mat%PTROW(i),mat%PTROW(i+1)-1
+         if (reelLUS) then
+           write (10,frmatlab) i,mat%INDCOL(j),mat%VALEUR(j)
+         else
+           write (10,fimatlab) i,mat%INDCOL(j)
+         endif
+        enddo
+       enddo
+       close(10)
+!
+       END SUBROUTINE matlab_imprimer
+!
+!**********************************************************************
+       SUBROUTINE creation_graphe(g,dim,mat)
+       implicit none
+! Creation du graphe g associe a la matrice mat d'ordre dim
+! le graphe g a ete declare dynamique et alloue dans le programme
+! principal. Edition du graphe
+       type (mcreuse),intent(in) :: mat
+       integer, intent(in)  ::dim
+       type (cell_graphe),dimension(:), allocatable, intent(out) ::g
+! variables de travail
+       type (cell_graphe),pointer::courant,deb,next
+       integer :: retour,i,j
+       print *, ' ** DEBUT creation_graphe **'
+       if (.NOT.ALLOCATED(g)) then
+         allocate(g(dim), stat=retour)
+         if (retour > 0) then
+           print *, ' Pb dans l allocation dynamique du graphe '
+           stop
+         end if
+         do i=1,dim
+           nullify(g(i)%suivant)
+         enddo
+       endif
+! On commence par dealloue le graphe si celui-ci avait deja
+! ete cree
+       do j=1,dim
+          deb=>g(j)%suivant
+          do while (associated(deb))
+             next=>deb%suivant
+             deallocate(deb)
+             deb=>next
+          end do
+       enddo
+!
+       do j=1,dim
+! Creation de la liste associee au noeud j
+!        initialisation du degre
+         g(j)%indice=0
+         nullify(deb)
+         do i=mat%PTROW(j+1)-1,mat%PTROW(j),-1
+! Insertion d'un nouvel element non nul sauf le terme diagonal
+           if (mat%INDCOL(i)/=j) then
+             allocate(courant,stat=retour)
+             if ( retour > 0 ) return
+             courant%indice=mat%INDCOL(i)
+             courant%suivant=>deb
+             deb=>courant
+             g(j)%indice=g(j)%indice+1
+           end if
+         end do
+! Mise a jour du pointeur d'entree pour la liste associee au noeud j
+         g(j)%suivant=>deb
+       end do
+       print *, ' ** FIN   creation_graphe **'
+       return
+       END SUBROUTINE creation_graphe
+!
+!**********************************************************************
+       SUBROUTINE edition_graphe(g,dim)
+       implicit none
+! Edition du graphe g de dimension dim
+       integer, intent(in) :: dim
+       type (cell_graphe), dimension(dim), intent(in) ::g
+! variables locales
+       integer :: i
+       type (cell_graphe), pointer ::deb
+!
+       print *,'*** DEBUT edition du graphe'
+       do i=1,dim
+         print *,'noeud ',i,' degre ',g(i)%indice
+         print *,'   ... Liste d adjacence : [ '
+         deb=>g(i)%suivant
+         do while (associated(deb))
+           print *,'                    ', deb%indice
+           deb=>deb%suivant
+         end do
+         print *,'                           ] '
+       end do
+       print *,'*** FIN edition du graphe'
+       return
+       END SUBROUTINE edition_graphe
+
+
+      SUBROUTINE CLEAN_graphe(g,dim,trace)
+       integer, intent(in)  :: dim
+       type (cell_graphe),dimension(dim), intent(out) ::g
+       logical, intent(in)  :: trace
+!      variables de travail
+       type (cell_graphe),pointer::deb,rech
+       integer :: retour
+       integer  :: i,j
+       if (trace) print *, ' ** DEBUT CLEAN_graphe **'
+       do j=1,dim
+         DO WHILE (associated(g(j)%suivant))
+           deb => g(j)%suivant
+           g(j)%suivant => deb%suivant
+           deallocate(deb)
+         ENDDO
+       enddo
+       if (trace) print *, ' ** FIN CLEAN_graphe **'
+       return
+       END SUBROUTINE CLEAN_graphe
+
+       END MODULE definition

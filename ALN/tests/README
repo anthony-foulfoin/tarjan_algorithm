@@ -1,0 +1,59 @@
+Ce répertoire  contient un jeu de matrices réelles
+non-symmétriques ecrites dans un format simple: 
+   ligne 1     : N          ( l'ordre de la matrice N )
+   ligne 2     : NE         ( le nombre d'élements nonnuls )
+   Ligne 3     : I1   J1    ( élément non nul a(I1,J1))
+   Ligne 4     : I2   J2    ( élément non nul a(I2,J2))
+        .
+        .
+        .
+   Ligne NZ+2  : Inz  Jnz   ( élément non nul a(Inz,Jnz))
+
+Remarques: 
+---------
+
+ -Chaque fichier possède donc NE+2 lignes et les éléments nonnuls peuvent
+    etre entrés dans un ordre quelconque.
+ -les matrices fournies n'ont pas d'élement nul sur la diagonale
+ -le fichier possède NE+2 lignes et les éléments nonnuls peuvent
+    etre entrés dans un ordre quelconque
+
+
+
+Cas tests fournis :
+-----------------
+Pour chacune des matrices N, NE nous indiquons
+le nombre de composantes fortes pour valider votre code.
+La matrice mat0 correspond à la matrice de la figure 2 du sujet.
+
+mat0   :  N, NE =            6, 15
+          Nb de composantes fortes  =  3
+arc130 :  N, NE =          130, 1282
+          Nb de composantes fortes  =  7
+lhr01 : N, NE =           1477, 18592
+          Nb de composantes fortes  =  298
+lhr02 : N, NE =           2954, 37206
+          Nb de composantes fortes  =  596
+lhr17 : N, NE =          17576, 381975
+          Nb de composantes fortes  =  1798
+lhr34 : N, NE =          35152, 764014
+          Nb de composantes fortes  =  3533
+lhr71c : N, NE =         70304, 1528092
+          Nb de composantes fortes  =  7066
+raefsky5 : N, NE =        6316, 168658
+          Nb de composantes fortes  =  6316
+raefsky6 : N, NE =        3402, 137845
+          Nb de composantes fortes  =  3402
+shl_200 : N, NE =          663, 1726
+          Nb de composantes fortes  =  663
+str_0 : N, NE =            363, 2454
+          Nb de composantes fortes  =  363
+str_200 : N, NE =          363, 3068
+          Nb de composantes fortes  =  234
+str_400 : N, NE =          363, 3157
+          Nb de composantes fortes  =  203
+
+test1 : Exemple 2 du sujet. Composantes fortes : 3
+test2 : Exemple 1 du sujet. Composantes fortes : 3
+test3 : Exemple 1 du rapport. Composantes fortes : 6
+test4 : Exemple 2 du rapport. Composantes fortes : 4

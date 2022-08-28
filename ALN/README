@@ -1,0 +1,72 @@
+$Id: README,v 1.2 2009-03-25 08:12:25 amestoy Exp $
+
+--------------------------
+Contenu du répertoire SRC
+--------------------------
+
+ validationBTF.f90
+ -----------------
+
+  Le programme principal validationBTF.f90 permet la lecture d'une matrice
+  et la génération du graphe de la matrice à partir du fichier au format 
+  simple.
+  Le fichier validationBTF.f90  fournit les fonctions permettant 
+  de lire une matrice non symetrique au format SIMPLE 
+  et de contruire le graphe associé vu comme une 
+  liste d'adjacence par ligne.
+   (Chaque entrée du graphe g(i)%suivant pointe sur la 
+    liste d'adjacence associée aux elements non nuls dans la 
+    ligne i de la matrice.)
+
+  definition.f90
+  --------------
+  Le fichier definition.f90 contient des fonctions et types
+  permettant de lire la matrice initiale au format simple CSR 
+  (Compress Sparse Row) et de creer/imprimer le graphe créé.  
+  Ce fichier pourra etre completé en ajoutant des types/procedures/fonctions
+  supplémentaires.
+
+
+
+  btf.f90
+  -------
+   Contient le squelette du code a completer.
+
+
+
+------------------------------------
+Contenu du répertoire ../MAT.simple
+------------------------------------
+
+Le répertoire ../MAT.simple contient un jeu de matrices réelles
+non-symmétriques ecrites dans un format simple: 
+   ligne 1     : N          ( l'ordre de la matrice N )
+   ligne 2     : NE         ( le nombre d'élements nonnuls )
+   Ligne 3     : I1   J1    ( élément non nul a(I1,J1))
+   Ligne 4     : I2   J2    ( élément non nul a(I2,J2))
+        .
+        .
+        .
+   Ligne NE+2  : Ine  Jne   ( élément non nul a(Ine,Jne))
+
+  Remarques: 
+  ---------
+   -Chaque fichier possède donc NE+2 lignes et les éléments nonnuls peuvent
+    etre entrés dans un ordre quelconque.
+
+   -Pour chacune des matrices N, NE et le nombre de composantes fortes est 
+    indiqué dans le fichier README du répertoire MAT.simple.
+
+   -Les matrices fournies n'ont pas d'élement nul sur la diagonale
+
+
+-----------------------------------
+Tester une matrice au format simple
+-----------------------------------
+
+Pour générer un exécutable faire: 
+  make 
+L'exécution du programme se fera alors par la ligne de commande suivante :
+ ./validationBTF < ../MAT.simple/nom_matrice 
+   (où nom_matrice correspond au fichier contenant la
+        matrice que l'on veut traiter)

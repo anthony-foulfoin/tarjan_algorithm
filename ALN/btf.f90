@@ -1,0 +1,590 @@
+! $Id: btf.f90,v 1.1 2009-02-25 10:41:57 amestoy Exp $
+
+! Codes d'erreurs retournes :
+! 1 Si la mtrice n'est pas triangularisable
+! 2 Si le nombre de composantes fortes trouve est incorrecte
+! 3 Si la dimension de la matrice (parametre N) est incorrecte.
+
+	SUBROUTINE AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+!   --------------------------------------------------
+!   Affichage des elements contenu dans une pile de type cell_pile
+!   __________________________________________________
+! --------------------
+! Param�tres d'entr�e
+! --------------------
+!	   PILE : PILE contenant les elements de type cell_pile a afficher
+!      NB_ELEM : Nombre d'elements de la pile
+!      trace : bool�en. Positionn� a vrai pour
+!              afficher le contenu de la pile � chaque
+!              �tape de l'algorithme.
+!
+		type cell_pile
+  			integer                    	:: num_noeud
+  			integer				:: indice
+   			type (cell_pile), pointer 	:: prec_chemin
+ 		END type cell_pile
+
+		TYPE(cell_pile), dimension(NB_ELEM), INTENT(IN) 	:: PILE
+		INTEGER, INTENT(IN)					:: NB_ELEM
+		INTEGER							:: j
+		LOGICAL, INTENT(IN)					:: TRACE
+
+		! Si on doit afficher le contenu de la pile a chaque etape
+		if (TRACE) then
+			write (*,*) '****** Contenu de la pile principale ******'
+			write (*,*) NB_ELEM, ' elements'
+			do j = 1, NB_ELEM
+				write (*,*) 'A l indice ', j
+				write(*,*) ' num : ', PILE(j)%num_noeud, ' indice : ', PILE(j)%indice, ' noeud prec ch : ', PILE(j)%prec_chemin%num_noeud
+			enddo
+		endif
+
+		END SUBROUTINE AFFICHER_PILE
+
+SUBROUTINE AFFICHER_PILE_SIMPLE(PILE, NB_ELEM, TRACE)
+!   --------------------------------------------------
+!   Affichage des elements contenu dans une pile de type cell_pile
+!   __________________________________________________
+! --------------------
+! Param�tres d'entr�e
+! --------------------
+!	   PILE : PILE contenant les elements de type cell_pile a afficher
+!      NB_ELEM : Nombre d'elements de la pile
+!      trace : bool�en. Positionn� a vrai pour
+!              afficher le contenu de la pile � chaque
+!              �tape de l'algorithme.
+!
+
+		INTEGER, dimension(NB_ELEM), INTENT(IN) 	:: PILE
+		INTEGER, INTENT(IN)				:: NB_ELEM
+		INTEGER						:: j
+		LOGICAL, INTENT(IN)				:: TRACE
+
+		! Si on doit afficher le contenu de la pile a chaque etape
+		if (TRACE) then
+			write (*,*) '****** Contenu de la pile principale ******'
+			write (*,*) NB_ELEM, ' elements'
+			do j = 1, NB_ELEM
+				write (*,*) 'A l indice ', j
+				write(*,*) ' num : ', PILE(j)
+			enddo
+		endif
+
+		END SUBROUTINE AFFICHER_PILE_SIMPLE
+
+
+       SUBROUTINE BTF(N, G, TRACE, PERM, NbCF, PTDebCF, IERREUR)
+!   --------------------------------------------------
+!   Algorithme de Tarjan :
+!     Soit G le graphe orient� associ� � une matrice
+!     A non symm�trique poss�dant des �lements non nuls
+!     sur la diagonale.
+!     L'algorithme calcule les composantes fortes du graphe
+!     et renvoie la permutation permettant de mettre la
+!     matrice A sous forme BTF.
+!   __________________________________________________
+! --------------------
+! Param�tres d'entr�e
+! --------------------
+!      N : Nombre de noeuds du graphe
+!      G : Graphe orient� repr�sent� comme un tableau de cellules.
+!          Pour i, 1<=i<=N, liste point�e par la cellule G(i) correspond
+!          aux indices de colonnes associ�s aux �l�ment non nuls
+!          dans la ligne i. L'�lement diagonal de la matrice initiale
+!          ne sera pas repr�sent� G.
+!          Le graphe G ne sera pas modifi�.
+!
+!      trace : bool�en. Positionn� a vrai pour
+!              afficher le contenu de la pile � chaque
+!              �tape de l'algorithme.
+!
+       USE definition
+       INTEGER, INTENT(in)                          :: N
+       TYPE (cell_graphe), dimension(N), INTENT(IN) :: G
+       LOGICAL, INTENT(IN)                          :: TRACE
+!
+! --------------------
+! Param�tres en SORTIE
+! --------------------
+!      PERM    : Tableau d'ordre N d'entiers contenant la permuation:
+!                PERM(i) = j si j est la iieme entr�e de la matrice
+!                                      permut�e.
+!      NbCF    : Nombre de composantes fortes d�tect�es
+!                (1 si la matrice associ�e est irr�ductible,
+!                 N si la matrice associ�e est triangulaire)
+!      PTDebCF : Tableau d'ordre N d'entiers tel que
+!                Soit 1<= k <= NbCF alors PTDebCF(k) indique la position
+!                dans le tableau PERM du permier indice de la
+!                composante kieme composante forte du graphe.
+!                (on a donc par d�finition toujours PTDebCF(1) = 1
+!      IERREUR : Codage du retour d'erreur (0 correspond a pas d'erreur).
+!
+
+		INTEGER, DIMENSION(N), INTENT(OUT)   :: PERM, PTDebCF
+       		INTEGER, INTENT(OUT)                 :: IERREUR, NbCF
+
+!		Elements utilises par l'algorithme
+
+		! Type des donnees stockees dans le tableau TAB_ARRETES
+		TYPE cell_pointer
+		TYPE (cell_graphe), POINTER :: p
+		END TYPE cell_pointer
+
+		! Type des donnees stockees dans la pile
+		type cell_pile
+  			integer                    	:: num_noeud ! Le numero du noeud concerne
+  			integer				:: indice ! L'indice du noeud concerne
+  			! Un pointeur vers le dernier element du chemin courant situe en dessous de l'element courant dans la pile
+   			type (cell_pile), pointer 	:: prec_chemin
+ 		END type cell_pile
+
+		! Pour un noeud i, TAB_ARRETES(i) est un pointeur sur le prochain noeud a visiter.
+		! Ce tableau pointe vers les elements de la liste d'adjacence de i, qui sont de type cell_graph.
+		! Si toutes les arretes depuis i ont ete visites, TAB_ARRETES(i) contient NULL.
+		TYPE(cell_pointer), DIMENSION(N)	 :: TAB_ARRETES
+
+		! Pile principale du programme, celle_ci contient des elements de type cell_pile
+ 		TYPE(cell_pile), dimension(N), TARGET	:: PILE
+
+		! Nombre d'elements qui sont presents dans le tableau PERM
+		INTEGER :: NB_ELEM_PERM
+
+		! Ce tableau permet de savoir si un noeud a deja ete visite ou non par l'algorithme.
+		! Pour un noeud i, 3 etats sont possibles pour TAB_VISITES(i) :
+		!  0 si le noeud n'a jamais ete visite
+		!  -1 si le noeud a ete traité, et éliminé du graph. (i.e. présent dans PERM)
+		!  son indice dans le tableau PILE sinon
+		! Par exemple si le noeud 3 a été visité, et figure à l'indice 2 du tableau PILE
+		! alors nous aurons TAB_VISITES(3) = 2
+       	INTEGER, dimension(N):: TAB_VISITES
+
+       	! nb d'elements stockes dans la pile
+       	INTEGER	:: NB_ELEM
+
+		! Dernier noeud visite par l'algo dans le graph G
+		! On commence par visite le noeud 1 en premier, une fois que celui-ci a ete visite on passe au suivant, etc.
+		INTEGER :: DERNIER_NOEUD_VISITE
+
+		! Nombre de noeuds visites par l'algo
+		INTEGER :: NB_NOEUDS_VISITES
+
+		! Pointeurs sur respectivement :
+		! L'element de la pile en cours de traitement
+		! Le precedent element de la pile qui a ete traite
+		TYPE(cell_pile), pointer :: NOEUD_COURANT, NOEUD_OLD
+
+		! Variables temporaires
+		INTEGER :: j, NUM_NOEUD_COURANT
+		LOGICAL :: TROUVE
+		
+
+		if(N>0) then
+       	
+			! INITIALISATION
+
+			DO j = 1,N
+				! Aucun noeud n'a ete visite
+				TAB_VISITES(j) = 0
+				! On indique quelles sont les prochaines arretes a visiter pour chaque noeud
+				TAB_ARRETES(j)%p => G(j)%suivant
+			END DO
+
+			NbCF = 0
+			IERREUR = 0
+			NB_ELEM = 0
+			NB_ELEM_PERM = 0
+			DERNIER_NOEUD_VISITE = 0
+			NB_NOEUDS_VISITES = 0
+
+			! DEBUT ALGO
+		
+			! Tant que tous les noeuds n'ont pas etes visites ou que la pile n'est pas vide
+			do while ((NB_NOEUDS_VISITES .NE. N) .OR. (NB_ELEM .NE. 0))
+
+				! on verifie si la pile est vide
+				if (NB_ELEM .EQ. 0) then
+					! Si elle n'est pas vide
+
+					! alors on choisit un noeud non visite
+					! on commence la recherche a partir du dernier noeud considere
+					DERNIER_NOEUD_VISITE = DERNIER_NOEUD_VISITE + 1
+
+					! On verifie si ce noeud a deja ete visite ou non
+					! On continue tant que l'on ne trouve pas un noeud non visite
+					do while(TAB_VISITES(DERNIER_NOEUD_VISITE) .NE. 0)
+						DERNIER_NOEUD_VISITE = DERNIER_NOEUD_VISITE + 1
+					enddo
+
+					! on empile le noeud trouve
+					NB_ELEM = NB_ELEM + 1	! Nous avons un element supplementaire dans PILE
+					NB_NOEUDS_VISITES = NB_NOEUDS_VISITES + 1	! Nous avons visite un noeud de plus
+					PILE(NB_ELEM)%num_noeud = DERNIER_NOEUD_VISITE ! Numero du noeud courant
+					PILE(NB_ELEM)%indice = DERNIER_NOEUD_VISITE	! Indice du noeud courant
+					PILE(NB_ELEM)%prec_chemin => PILE(NB_ELEM)	! dernier noeud du chemin courant (lui-meme)
+					NOEUD_COURANT => PILE(NB_ELEM) ! Le noeud considere devient le noeud courant
+					TAB_VISITES(DERNIER_NOEUD_VISITE) = NB_ELEM	! On indique quelle est la position du noeud courant dans PILE
+
+					! Si on doit afficher le contenu de la pile a chaque etape
+					CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+				endif
+
+				! On regarde s'il existe des arrêtes non encore parcourues pour le noeud courant
+				if(ASSOCIATED(TAB_ARRETES(NOEUD_COURANT%num_noeud)%p)) then
+
+					! il y a des arretes non parcourues
+					! on regarde quel est le noeud pointe par l'arrete
+
+					NOEUD_OLD => NOEUD_COURANT
+					! On obtient le numero du noeud pointe par l'arrete
+					NUM_NOEUD_COURANT = TAB_ARRETES(NOEUD_COURANT%num_noeud)%p%indice
+
+					! on met a jour la prochaine arrete a parcourir pour le noeud courant
+					TAB_ARRETES(NOEUD_COURANT%num_noeud)%p => TAB_ARRETES(NOEUD_COURANT%num_noeud)%p%suivant
+
+					! Si le noeud pointe par l'arrete n'a pas deja ete elimine
+					if(TAB_VISITES(NUM_NOEUD_COURANT) .NE. -1) then
+
+						! Si le noeud pointe n'a jamais ete visite
+						! alors on l'ajoute dans la pile
+
+						if(TAB_VISITES(NUM_NOEUD_COURANT) .EQ. 0) then
+
+							NB_ELEM = NB_ELEM + 1
+							NB_NOEUDS_VISITES = NB_NOEUDS_VISITES + 1
+							PILE(NB_ELEM)%num_noeud = NUM_NOEUD_COURANT
+							PILE(NB_ELEM)%indice = NUM_NOEUD_COURANT
+							PILE(NB_ELEM)%prec_chemin => NOEUD_COURANT ! Le noeud pointe sur le precedent
+
+							NOEUD_COURANT => PILE(NB_ELEM)
+
+							TAB_VISITES(NUM_NOEUD_COURANT) = NB_ELEM
+
+							! Si on doit afficher le contenu de la pile a chaque etape
+							CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+
+						else
+							! Si le noeud pointe a deja ete visite, mais pas elimine
+
+							! Il devient temporairement le noeud courant pendant la duree de son traitement
+							NOEUD_COURANT => PILE(TAB_VISITES(NUM_NOEUD_COURANT))
+
+							! on verifie s'il n'est pas plus bas dans la pile que l'indice de l'ancien noeud courant
+
+							if(TAB_VISITES(NOEUD_COURANT%num_noeud) < TAB_VISITES(NOEUD_OLD%indice)) then
+
+								! Le nouveau noeud est plus bas dans la pile que l'indice de l'ancien
+								! On met à jour l'indice de l'ancien noeud
+								NOEUD_OLD%indice = NOEUD_COURANT%num_noeud
+
+								! Si on doit afficher le contenu de la pile a chaque etape
+								CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+							endif
+
+							! Le noeud courant a deja ete traite, on revient au noeud precedent
+							NOEUD_COURANT => NOEUD_OLD
+						endif
+					endif
+				else
+					! Toutes les arretes ont ete parcourues
+
+					! Si i est plus bas dans Pile que num_noeud, alors le noeud est laissé dans Pile
+					! mais est enlevé du chemin courant
+
+					if(TAB_VISITES(NOEUD_COURANT%indice) < TAB_VISITES(NOEUD_COURANT%num_noeud)) then
+
+						! On enleve le noeud courant du chemin courant
+
+						! Si on doit afficher le contenu de la pile a chaque etape
+						CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+
+						! On change le noeud courant
+						NOEUD_OLD => NOEUD_COURANT
+
+						NOEUD_COURANT => NOEUD_COURANT%prec_chemin
+		
+						! Si l'indice de l'ancien noeud est plus bas dans la pile que l'indice du nouveau
+						if(TAB_VISITES(NOEUD_OLD%indice) < TAB_VISITES(NOEUD_COURANT%indice)) then
+
+							! On met a jour l'indice nu noeud courant
+							NOEUD_COURANT%indice = NOEUD_OLD%indice
+							! Si on doit afficher le contenu de la pile a chaque etape
+							CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+						endif
+
+					else
+						! Si i n'est pas plus bas dans Pile que num_noeud
+						! alors i = num_noeud
+
+						! Nous avons une composante forte
+						! On depile tous les elements au dessus du noeud courant, y compris ce dernier
+						! On les transfert dans la pile PERM
+
+						NbCF = NbCF + 1 ! Nous avons une composante forte de plus
+						PTDebCF(NbCF) = NB_ELEM_PERM + 1 ! Pointeur vers le debut de la nouvelel composante forte dans PERM
+
+						do j=NB_ELEM,TAB_VISITES(NOEUD_COURANT%num_noeud), -1
+							NB_ELEM_PERM = NB_ELEM_PERM + 1 ! Nous avons une element de plus dans PERM
+							PERM(NB_ELEM_PERM) = PILE(j)%num_noeud
+
+							! on indique que le noeud a ete elimine
+							TAB_VISITES(PILE(j)%num_noeud) = -1
+
+							NB_ELEM = NB_ELEM - 1 ! Nous avons un element de moins dans PILE
+						enddo
+
+						! Si on doit afficher le contenu de la pile a chaque etape
+						CALL AFFICHER_PILE(PILE, NB_ELEM, TRACE)
+
+						! On modifie le noeud courant
+
+						! S'il reste des elements dans la pile, le noeud courant devient le dernier element
+						if (NB_ELEM > 0) then
+							NOEUD_COURANT => PILE(NB_ELEM)
+						else
+							NOEUD_COURANT => NULL()
+						endif
+					endif
+				endif
+			enddo
+		else
+			IERREUR = 3
+		endif
+!
+! ------------------
+! ESPACE DE TRAVAIL
+! ------------------
+!  La comp�xit� de l'espace de travail est en O(N);
+!  Plus pr�cisemment, UNIQUEMENT CINQ
+!  tableaux ou listes de taille maximum N d' entiers,
+!  de pointeurs ou de cellules de type cell_graphe
+!  pourront �tre allou�s et utilis�s � une �tape de
+!  l'algorithme.
+!
+      RETURN
+      END SUBROUTINE BTF
+!--------------------------------------------
+      SUBROUTINE TRIANG(N, G, TRACE, PERM, NbCF, PTDebCF, IERREUR)
+!   --------------------------------------------------
+!   Algorithme de Tarjan :
+!     Soit G le graphe orient� associ� � une matrice
+!     A non symm�trique poss�dant des �lements non nuls
+!     sur la diagonale.
+!     L'algorithme calcule les composantes fortes du graphe
+!     et renvoie la permutation permettant de mettre la
+!     matrice A sous forme BTF.
+!   __________________________________________________
+! --------------------
+! Param�tres d'entr�e
+! --------------------
+!      N : Nombre de noeuds du graphe
+!      G : Graphe orient� repr�sent� comme un tableau de cellules.
+!          Pour i, 1<=i<=N, liste point�e par la cellule G(i) correspond
+!          aux indices de colonnes associ�s aux �l�ment non nuls
+!          dans la ligne i. L'�lement diagonal de la matrice initiale
+!          ne sera pas repr�sent� G.
+!          Le graphe G ne sera pas modifi�.
+!
+!      trace : bool�en. Positionn� a vrai pour
+!              afficher le contenu de la pile � chaque
+!              �tape de l'algorithme.
+!
+       USE definition
+       INTEGER, INTENT(in)                          :: N
+       TYPE (cell_graphe), dimension(N), INTENT(IN) :: G
+       LOGICAL, INTENT(IN)                          :: TRACE
+!
+! --------------------
+! Param�tres en SORTIE
+! --------------------
+!      PERM    : Tableau d'ordre N d'entiers contenant la permuation:
+!                PERM(i) = j si j est la iieme entr�e de la matrice
+!                                      permut�e.
+!      NbCF    : Nombre de composantes fortes d�tect�es
+!                (1 si la matrice associ�e est irr�ductible,
+!                 N si la matrice associ�e est triangulaire)
+!      PTDebCF : Tableau d'ordre N d'entiers tel que
+!                Soit 1<= k <= NbCF alors PTDebCF(k) indique la position
+!                dans le tableau PERM du permier indice de la
+!                composante kieme composante forte du graphe.
+!                (on a donc par d�finition toujours PTDebCF(1) = 1
+!      IERREUR : Codage du retour d'erreur (0 correspond a pas d'erreur).
+!
+
+		INTEGER, DIMENSION(N), INTENT(OUT)   :: PERM, PTDebCF
+	       	INTEGER, INTENT(OUT)                 :: IERREUR, NbCF
+
+!		Elements utilises par l'algorithme
+
+		! Type des donnees stockees dans le tableau TAB_ARRETES
+		TYPE cell_pointer
+		TYPE (cell_graphe), POINTER :: p
+		END TYPE cell_pointer
+
+		! Pour un noeud i, TAB_ARRETES(i) est un pointeur sur le prochain noeud a visiter.
+		! Ce tableau pointe vers les elements de la liste d'adjacence de i, qui sont de type cell_graph.
+		! Si toutes les arretes depuis i ont ete visites, TAB_ARRETES(i) contient NULL.
+		TYPE(cell_pointer), DIMENSION(N) :: TAB_ARRETES
+
+		! Pile principale du programme, celle_ci contient les numeros des noeuds
+ 		INTEGER, dimension(N), TARGET 	:: PILE
+
+		! Nombre d'elements qui sont presents dans le tableau PERM
+		INTEGER :: NB_ELEM_PERM
+
+		! Ce tableau permet de savoir si un noeud a deja ete visite ou non par l'algorithme.
+		! Pour un noeud i, 3 etats sont possibles pour TAB_VISITES(i) :
+		!  0 si le noeud n'a jamais ete visite
+		!  -1 si le noeud a ete traité, et éliminé du graph. (i.e. présent dans PERM)
+		!  son indice dans le tableau PILE sinon
+		! Par exemple si le noeud 3 a été visité, et figure à l'indice 2 du tableau PILE
+		! alors nous aurons TAB_VISITES(3) = 2
+       		INTEGER, dimension(N):: TAB_VISITES
+
+      	 	! nb d'elements stockes dans la pile
+       		INTEGER	:: NB_ELEM
+
+		! Dernier noeud visite par l'algo dans le graph G
+		! On commence par visite le noeud 1 en premier, une fois que celui-ci a ete visite on passe au suivant, etc.
+		INTEGER :: DERNIER_NOEUD_VISITE
+
+		! Nombre de noeuds visites par l'algo
+		INTEGER :: NB_NOEUDS_VISITES
+
+		! Variables temporaires
+		INTEGER :: j, NUM_NOEUD_COURANT, NUM_NVX_NOEUD
+		LOGICAL :: TROUVE
+		
+		if(N>0) then
+	       		! INITIALISATION
+
+			DO j = 1,N
+				! Aucun noeud n'a ete visite
+				TAB_VISITES(j) = 0
+				! On indique quelles sont les prochaines arretes a visiter pour chaque noeud
+				TAB_ARRETES(j)%p => G(j)%suivant
+			END DO
+
+			NbCF = 0
+			IERREUR = 0
+			NB_ELEM = 0
+			NB_ELEM_PERM = 0
+			DERNIER_NOEUD_VISITE = 0
+			NB_NOEUDS_VISITES = 0
+
+			! DEBUT ALGO
+
+			! Tant que tous les noeuds n'ont pas etes visites ou que la pile n'est pas vide
+			do while (((NB_NOEUDS_VISITES .NE. N) .OR. (NB_ELEM .NE. 0)) .AND. (IERREUR == 0))
+
+				! on verifie si la pile est vide
+				if (NB_ELEM .EQ. 0) then
+					! Si elle n'est pas vide
+
+					! alors on choisit un noeud non visite
+					! on commence la recherche a partir du dernier noeud considere
+					DERNIER_NOEUD_VISITE = DERNIER_NOEUD_VISITE + 1
+
+					! On verifie si ce noeud a deja ete visite ou non
+					! On continue tant que l'on ne trouve pas un noeud non visite
+					do while(TAB_VISITES(DERNIER_NOEUD_VISITE) .NE. 0)
+						DERNIER_NOEUD_VISITE = DERNIER_NOEUD_VISITE + 1
+					enddo
+
+					! on empile le noeud trouve
+					NB_ELEM = NB_ELEM + 1	! Nous avons un element supplementaire dans PILE
+					NB_NOEUDS_VISITES = NB_NOEUDS_VISITES + 1	! Nous avons visite un noeud de plus
+					PILE(NB_ELEM) = DERNIER_NOEUD_VISITE
+					TAB_VISITES(DERNIER_NOEUD_VISITE) = NB_ELEM	! On indique quelle est la position du noeud courant dans PILE
+					NUM_NOEUD_COURANT = DERNIER_NOEUD_VISITE
+					! Si on doit afficher le contenu de la pile a chaque etape
+					CALL AFFICHER_PILE_SIMPLE(PILE, NB_ELEM, TRACE)
+				endif
+
+				! On regarde s'il existe des arrêtes non encore parcourues pour le noeud courant
+				if(ASSOCIATED(TAB_ARRETES(NUM_NOEUD_COURANT)%p)) then
+
+					! il y a des arretes non parcourues
+					! on regarde quel est le noeud pointe par l'arrete
+
+					! On obtient le numero du noeud pointe par l'arrete
+					NUM_NVX_NOEUD = TAB_ARRETES(NUM_NOEUD_COURANT)%p%indice
+
+					! on met a jour la prochaine arrete a parcourir pour le noeud courant
+					TAB_ARRETES(NUM_NOEUD_COURANT)%p => TAB_ARRETES(NUM_NOEUD_COURANT)%p%suivant
+
+					! Si le noeud pointe par l'arrete n'a pas deja ete elimine
+					if(TAB_VISITES(NUM_NVX_NOEUD) .NE. -1) then
+
+						! Si le noeud pointe n'a jamais ete visite
+						! alors on l'ajoute dans la pile
+
+						if(TAB_VISITES(NUM_NVX_NOEUD) .EQ. 0) then
+
+							NB_ELEM = NB_ELEM + 1
+							NB_NOEUDS_VISITES = NB_NOEUDS_VISITES + 1
+							PILE(NB_ELEM) = NUM_NVX_NOEUD
+	
+							NUM_NOEUD_COURANT = NUM_NVX_NOEUD
+
+							TAB_VISITES(NUM_NOEUD_COURANT) = NB_ELEM
+
+							! Si on doit afficher le contenu de la pile a chaque etape
+							CALL AFFICHER_PILE_SIMPLE(PILE, NB_ELEM, TRACE)
+
+						else
+							! Si le noeud pointe a deja ete visite, mais pas elimine
+							! Alors la matrice ne peut etre mise sous forme triangulaire.
+							! Il y a une erreur
+							IERREUR = 1
+						endif
+					endif
+				else
+					! Toutes les arretes ont ete parcourues
+
+					! Nous avons une composante forte
+					! On empile le noeud courant dans PERM
+
+					NbCF = NbCF + 1 ! Nous avons une composante forte de plus
+					PTDebCF(NbCF) = NB_ELEM_PERM + 1 ! Pointeur vers le debut de la nouvelel composante forte dans PERM
+
+					NB_ELEM_PERM = NB_ELEM_PERM + 1 ! Nous avons une element de plus dans PERM
+					PERM(NB_ELEM_PERM) = NUM_NOEUD_COURANT
+
+					! on indique que le noeud a ete elimine
+					TAB_VISITES(NUM_NOEUD_COURANT) = -1
+
+					NB_ELEM = NB_ELEM - 1 ! Nous avons un element de moins dans PILE
+
+					! Si on doit afficher le contenu de la pile a chaque etape
+					CALL AFFICHER_PILE_SIMPLE(PILE, NB_ELEM, TRACE)
+
+					! On modifie le noeud courant
+
+					! S'il reste des elements dans la pile, le noeud courant devient le dernier element
+					if (NB_ELEM > 0) then
+						NUM_NOEUD_COURANT = PILE(NB_ELEM)
+					else
+						NUM_NOEUD_COURANT = -1
+					endif
+				endif
+			enddo
+		else
+			IERREUR = 3
+		endif
+		
+	if((NbCF .NE. N) .AND. (IERREUR==0)) then
+		IERREUR = 2
+	endif
+!
+! ------------------
+! ESPACE DE TRAVAIL
+! ------------------
+!  La comp�xit� de l'espace de travail est en O(N);
+!  Plus pr�cisemment, UNIQUEMENT CINQ
+!  tableaux ou listes de taille maximum N d' entiers,
+!  de pointeurs ou de cellules de type cell_graphe
+!  pourront �tre allou�s et utilis�s � une �tape de
+!  l'algorithme.
+!
+      RETURN
+      END SUBROUTINE TRIANG
